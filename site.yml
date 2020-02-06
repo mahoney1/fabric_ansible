@@ -1,0 +1,182 @@
+---
+- name: Deploy demo blockchain infrastructure and smart contracts
+  hosts: localhost
+  vars:
+    #
+    # For information on these configuration options, read the documentation:
+    # https://github.com/IBM-Blockchain/ansible-role-blockchain-platform-manager#example-playbook
+    #
+    infrastructure:
+      type: docker
+      docker:
+        network: fabcar_nw
+    organizations:
+      - &dealerOrg
+        msp:
+          id: "dealerOrgMSP"
+          admin:
+            identity: "dealerAdmin"
+            secret: "dealerAdminpw"
+          ibp:
+            display_name: "dealerOrg MSP"
+        ca: &dealerOrgCA
+          id: "dealerOrgCA"
+          admin_identity: "admin"
+          admin_secret: "adminpw"
+          tls:
+            enabled: false
+          docker:
+            name: ca.dealer.example.com
+            hostname: ca.dealer.example.com
+            port: 17054
+          ibp:
+            display_name: "dealerOrg CA"
+        peers:
+          - &dealerOrgPeer1
+            id: "dealerOrgPeer1"
+            identity: "dealerpeer1"
+            secret: "dealerpeer1pw"
+            database_type: couchdb
+            tls:
+              enabled: false
+            docker:
+              name: peer0.dealer.example.com
+              hostname: peer0.dealer.example.com
+              port: 17051
+              chaincode_port: 17052
+              operations_port: 17053
+              couchdb:
+                name: couchdb0.dealer.example.com
+                hostname: couchdb0.dealer.example.com
+                port: 5984
+            ibp:
+              display_name: "dealerOrg Peer1"
+        nodes: "{{ playbook_dir }}/nodes/dealerOrg"
+        wallet: "{{ playbook_dir }}/wallets/dealerOrg"
+        gateways: "{{ playbook_dir }}/gateways/dealerOrg"
+      - &regulatorOrg
+        msp:
+          id: "regulatorOrgMSP"
+          admin:
+            identity: "regulatorAdmin"
+            secret: "regulatorAdminpw"
+          ibp:
+            display_name: "regulatorOrg MSP"
+        ca: &regulatorOrgCA
+          id: "regulatorOrgCA"
+          admin_identity: "admin"
+          admin_secret: "adminpw"
+          tls:
+            enabled: false
+          docker:
+            name: ca.regulator.example.com
+            hostname: ca.regulator.example.com
+            port: 18054
+          ibp:
+            display_name: "regulatorOrg CA"
+        peers:
+          - &regulatorOrgPeer1
+            id: "regulatorOrgPeer1"
+            identity: "regulatorpeer1"
+            secret: "regulatorpeer1pw"
+            database_type: couchdb
+            tls:
+              enabled: false
+            docker:
+              name: peer0.regulator.example.com
+              hostname: peer0.regulator.example.com
+              port: 18051
+              chaincode_port: 18052
+              operations_port: 18053
+              couchdb:
+                name: couchdb0.regulator.example.com
+                hostname: couchdb0.regulator.example.com
+                port: 6984
+            ibp:
+              display_name: "regulatorOrg Peer1"
+        nodes: "{{ playbook_dir }}/nodes/regulatorOrg"
+        wallet: "{{ playbook_dir }}/wallets/regulatorOrg"
+        gateways: "{{ playbook_dir }}/gateways/regulatorOrg"
+      - &OrdererOrg
+        msp:
+          id: "OrdererMSP"
+          admin:
+            identity: "ordererAdmin"
+            secret: "ordererAdminpw"
+          ibp:
+            display_name: "Orderer MSP"
+        ca: &OrdererCA
+          id: "OrdererCA"
+          admin_identity: "admin"
+          admin_secret: "adminpw"
+          tls:
+            enabled: false
+          docker:
+            name: ca.orderer.example.com
+            hostname: ca.orderer.example.com
+            port: 16054
+          ibp:
+            display_name: "Orderer CA"
+        orderer: &Orderer
+          id: "Orderer1"
+          identity: "orderer1"
+          secret: "orderer1pw"
+          tls:
+            enabled: false
+          consortium:
+            members:
+              - *dealerOrg
+              - *regulatorOrg
+          docker:
+            name: orderer.example.com
+            hostname: orderer.example.com
+            port: 17050
+            operations_port: 17055
+          ibp:
+            display_name: "Orderer1"
+            cluster_name: "OrdererCluster"
+        nodes: "{{ playbook_dir }}/nodes/Orderer"
+        wallet: "{{ playbook_dir }}/wallets/Orderer"
+        gateways: "{{ playbook_dir }}/gateways/Orderer"
+    channels:
+      - &Channel1
+        name: fabchannel1
+        orderer: *Orderer
+        members:
+          - <<: *dealerOrg
+            committing_peers:
+              - *dealerOrgPeer1
+            anchor_peers:
+              - *dealerOrgPeer1
+          - <<: *regulatorOrg
+            committing_peers:
+              - *regulatorOrgPeer1
+            anchor_peers:
+              - *regulatorOrgPeer1
+    contracts:
+      - name: fabcar
+        version: 1.0.1
+        package: "{{ playbook_dir }}/contracts/fabcar@1.0.1.cds"
+        channels:
+          - <<: *Channel1
+            endorsement_policy: "OR('dealerOrgMSP.member','regulatorOrgMSP.member')"
+            endorsing_members:
+              - <<: *dealerOrg
+                endorsing_peers:
+                  - <<: *dealerOrgPeer1
+              - <<: *regulatorOrg
+                endorsing_peers:
+                  - <<: *regulatorOrgPeer1
+    gateways:
+      - name: dealerOrg gateway
+        organization:
+          <<: *dealerOrg
+          gateway_peers:
+            - <<: *dealerOrgPeer1
+      - name: regulatorOrg gateway
+        organization:
+          <<: *regulatorOrg
+          gateway_peers:
+            - <<: *regulatorOrgPeer1
+  roles:
+    - ibm.blockchain_platform_manager
